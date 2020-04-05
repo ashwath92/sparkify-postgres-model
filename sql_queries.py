@@ -64,7 +64,54 @@ SELECT song_id, artists.artist_id FROM songs JOIN artists ON songs.artist_id=art
 WHERE title=%s AND artists.name=%s AND duration=%s;
 """)
 
+# TEMP TABLE QUERIES:
+temp_user_table_create = ("""
+CREATE TEMP TABLE IF NOT EXISTS tempusers (start_time bigint, user_id bigint, first_name text, last_name text, gender varchar(2), level text NOT NULL);
+""")
+
+temp_time_table_create = ("""
+CREATE TEMP TABLE IF NOT EXISTS temptime
+AS
+SELECT * FROM time
+WITH NO DATA;
+""")
+
+temp_songplay_table_create = ("""
+CREATE TEMP TABLE IF NOT EXISTS tempsongplays(start_time bigint, user_id bigint, level text, song_id text, artist_id text, session_id bigint NOT NULL, location text, user_agent text);
+""")
+
+temp_songplay_table_insert = ("""
+INSERT INTO tempsongplays (start_time, user_id, level, song_id, artist_id,
+                   session_id, location, user_agent) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+""")
+
+temp_songplay_table_drop = "DROP TABLE IF EXISTS tempsongplays;"
+temp_user_table_drop = "DROP TABLE IF EXISTS tempusers;"
+temp_time_table_drop = "DROP TABLE IF EXISTS temptime;"
+
+# Queries to move data from temp table to main table
+users_insert_from_tempusers = ("""
+INSERT INTO users (user_id, first_name, last_name, gender, level)
+SELECT user_id, first_name, last_name, gender, level FROM tempusers
+ORDER BY start_time desc
+ON CONFLICT (user_id) DO NOTHING;""")
 # QUERY LISTS
 
-create_table_queries = [user_table_create, song_table_create, artist_table_create, time_table_create, songplay_table_create]
+time_insert_from_temptime = ("""
+INSERT INTO time
+SELECT * FROM temptime
+ON CONFLICT (start_time) DO NOTHING;""")
+
+songplays_insert_from_tempsongplays = ("""
+INSERT INTO songplays (start_time, user_id, level, song_id, artist_id, session_id, location, user_agent)
+SELECT * FROM tempsongplays;""")
+
+# QUERY LISTS
+
+create_table_queries = [user_table_create, song_table_create, artist_table_create, time_table_create,
+                        songplay_table_create]
 drop_table_queries = [songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
+create_temp_table_queries = [temp_user_table_create, temp_time_table_create, temp_songplay_table_create]
+insert_from_temp_to_main_queries = [users_insert_from_tempusers, time_insert_from_temptime,
+                                    songplays_insert_from_tempsongplays]
+drop_temp_table_queries = [temp_user_table_drop, temp_time_table_drop, temp_songplay_table_drop]

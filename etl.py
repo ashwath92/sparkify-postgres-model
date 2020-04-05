@@ -64,40 +64,69 @@ def bulk_insert(df, cur, table_name):
     # Syntax: cur.copy_from(f, 'test', columns=('num', 'data')) 
     # https://www.psycopg.org/docs/cursor.html#cursor.copy_from
     cur.copy_from(obj, table_name, columns=tuple(df.columns))
+    
+def create_temp_tables(cur):
+    """ Creates temporary tables with no data for user data (tempusers),
+    time data (temptime) and songplay data (tempsongplay)"""
+    for query in create_temp_table_queries:
+        cur.execute(query)
+    
+def bulk_insert_df_to_temptable(df, cur, temptablename):
+    """ Writes the data frame df supplied in the arguments into a StringIO object,
+    which is then bulk inserted into an already-created Postgres temporary table
+    (temptablename) using psycopg2's copy_from function."""
+    obj = StringIO()
+    obj.write(df.to_csv(sep='\t', header=None, index=None))
+    obj.seek(0)
+    cur.copy_from(obj, temptablename, columns=df.columns)
+    
+def move_from_temp_to_main_tables(cur, conn):
+    """ Moves data from the temporary tables created (temptime, tempusers,
+    tempsongplays) into the main tables (time, users, songlplays). Handles
+    conflicts (duplicates) with the ON CONFLICT DO... statement in Postgres."""
+    # NOTE: The insert into statement for the users table first orders by
+    # the timestamp in the tempusers table, thereby ensuring the latest values
+    # of the fields for the given user_id are present.
+    for query in insert_from_temp_to_main_queries:
+        cur.execute(query)
+    conn.commit()
+
+def drop_temp_tables(cur):
+    """ Drops temporary tables for user data (tempusers), time data (temptime)
+    and songplay data (tempsongplay)"""
+    for query in drop_temp_table_queries:
+        cur.execute(query)
         
 def process_log_file(cur, filepath):
     df = pd.read_json(filepath, lines=True)
     # filter by NextSong action
     df = df[df.page=='NextSong']
+    df = df.rename(columns={'ts': 'start_time'})
     # Create a time df and create a pd.timestamp column from ts.
-    time_df = df.loc[:, ['ts']]
-    time_df['tstamp'] = pd.to_datetime(time_df.ts, unit='ms')
-    time_df = time_df.rename(columns={'ts': 'start_time'})
+    time_df = df.loc[:, ['start_time']]
+    time_df['tstamp'] = pd.to_datetime(time_df.start_time, unit='ms')
+    
     column_labels = ['hour', 'day', 'week', 'month', 'year', 'weekday']
     time_df[column_labels] = time_df.loc[:, ['tstamp']].apply(get_timestamp_components, axis=1,
                                                           result_type='expand')
     time_df = time_df.drop(['tstamp'], axis=1)
-    # Drop duplicates if they exist. These records in time_df aren't tied to a 
-    # particular user, so that should be perfectly fine.
-    time_df = time_df.drop_duplicates(subset='start_time', keep="last")
-    # insert time data records
-    bulk_insert(time_df, cur, 'time')
-    
+    # Bulk insert into a temp table temptime 
+    bulk_insert_df_to_temptable(time_df, cur, 'temptime')
+        
     # load user table
-    user_df = df.loc[:, ['userId', 'firstName', 'lastName', 'gender', 'level']]
+    user_df = df.loc[:, ['start_time', 'userId', 'firstName', 'lastName', 'gender', 'level']]
     # Rename data frame columns to match Postgres table columns
     user_df= user_df.rename(columns={"userId":"user_id", "firstName":"first_name",
                        "lastName":"last_name"})
-    # Drop duplicates records for the same user in the current log file.
-    # Duplicate users in other log files will be handled by postgres's 'on conflict'
-    # statement (update to latest value)
+    # Handle duplicate users in the current file.
     user_df = user_df.drop_duplicates(subset='user_id', keep="last")
-    # insert user records
-    bulk_insert(user_df, cur, 'users')
+    # Bulk insert into to a temp table tempusers.
+    # Duplicate users in other files will be handled by postgres's 'on conflict' statement
+    # (update to latest value)
+    bulk_insert_df_to_temptable(user_df, cur, 'tempusers')
     
     # insert songplay records
     for index, row in df.iterrows():
-        
         # get songid and artistid from song and artist tables
         cur.execute(song_select, (row.song, row.artist, row.length))
         results = cur.fetchone()
@@ -107,9 +136,11 @@ def process_log_file(cur, filepath):
         else:
             songid, artistid = None, None
 
-        # insert songplay record
-        songplay_data = (row.ts, row.userId, row.level, songid, artistid, row.sessionId, row.location, row.userAgent)
-        cur.execute(songplay_table_insert, songplay_data)
+        # insert songplay record into a temporary songplay table as the songplay table has foreign
+        # from the empty users and time tables.
+        songplay_data = (row.start_time, row.userId, row.level, songid, artistid, row.sessionId, row.location,
+                         row.userAgent)
+        cur.execute(temp_songplay_table_insert, songplay_data)
 
 def process_data(cur, conn, filepath, func):
     # get all files matching extension from directory
@@ -129,16 +160,16 @@ def process_data(cur, conn, filepath, func):
         conn.commit()
         print('{}/{} files processed.'.format(i, num_files))
 
-
 def main():
     conn = psycopg2.connect("host=127.0.0.1 dbname=sparkifydb user=student password=student")
     cur = conn.cursor()
-
     process_data(cur, conn, filepath='data/song_data', func=process_song_file)
+    create_temp_tables(cur)
     process_data(cur, conn, filepath='data/log_data', func=process_log_file)
-
+    move_from_temp_to_main_tables(cur, conn)
+    print("Inserted data into all tables!")
+    drop_temp_tables(cur)
     conn.close()
-
 
 if __name__ == "__main__":
     main()

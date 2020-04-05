@@ -1,5 +1,6 @@
 import os
 import glob
+from io import StringIO
 import psycopg2
 import pandas as pd
 from sql_queries import *
@@ -52,7 +53,18 @@ def process_song_file(cur, filepath):
         print('Error encountered while inserting artist data')
         print(e)
 
-
+def bulk_insert(df, cur, table_name):
+    """ Takes a data frame, cursor and postgres table name as arguments,
+    and does a bulk insert into the table using StringIO as a staging file"""
+    obj = StringIO()
+    obj.write(df.to_csv(sep='\t', header=None, index=None))
+    obj.seek(0)
+    # Use copy_from command  to insert the content of an entire log file into
+    # the resp. postgres table.
+    # Syntax: cur.copy_from(f, 'test', columns=('num', 'data')) 
+    # https://www.psycopg.org/docs/cursor.html#cursor.copy_from
+    cur.copy_from(obj, table_name, columns=tuple(df.columns))
+        
 def process_log_file(cur, filepath):
     df = pd.read_json(filepath, lines=True)
     # filter by NextSong action
@@ -69,9 +81,8 @@ def process_log_file(cur, filepath):
     # particular user, so that should be perfectly fine.
     time_df = time_df.drop_duplicates(subset='start_time', keep="last")
     # insert time data records
-    for i, row in time_df.iterrows():
-        cur.execute(time_table_insert, list(row))
-
+    bulk_insert(time_df, cur, 'time')
+    
     # load user table
     user_df = df.loc[:, ['userId', 'firstName', 'lastName', 'gender', 'level']]
     # Rename data frame columns to match Postgres table columns
@@ -82,9 +93,8 @@ def process_log_file(cur, filepath):
     # statement (update to latest value)
     user_df = user_df.drop_duplicates(subset='user_id', keep="last")
     # insert user records
-    for i, row in user_df.iterrows():
-        cur.execute(user_table_insert, row)
-
+    bulk_insert(user_df, cur, 'users')
+    
     # insert songplay records
     for index, row in df.iterrows():
         

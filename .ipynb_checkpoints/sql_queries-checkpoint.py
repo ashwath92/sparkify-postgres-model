@@ -61,7 +61,7 @@ INSERT INTO time (start_time, hour, day, week, month, year, weekday) VALUES (%s,
 
 song_select = ("""
 SELECT song_id, artists.artist_id FROM songs JOIN artists ON songs.artist_id=artists.artist_id
-WHERE title=%s AND artists.name=%s AND duration=%s;
+WHERE LOWER(title)=%s AND LOWER(artists.name)=%s AND duration=%s;
 """)
 
 # TEMP TABLE QUERIES:
@@ -108,10 +108,8 @@ SELECT * FROM tempsongplays;""")
 
 # QUERY LISTS
 
-create_table_queries = [user_table_create, song_table_create, artist_table_create, time_table_create,
-                        songplay_table_create]
+create_table_queries = [user_table_create, song_table_create, artist_table_create, time_table_create, songplay_table_create]
 drop_table_queries = [songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
 create_temp_table_queries = [temp_user_table_create, temp_time_table_create, temp_songplay_table_create]
-insert_from_temp_to_main_queries = [users_insert_from_tempusers, time_insert_from_temptime,
-                                    songplays_insert_from_tempsongplays]
+insert_from_temp_to_main_queries = [users_insert_from_tempusers, time_insert_from_temptime, songplays_insert_from_tempsongplays]
 drop_temp_table_queries = [temp_user_table_drop, temp_time_table_drop, temp_songplay_table_drop]

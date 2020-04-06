@@ -127,8 +127,8 @@ def process_log_file(cur, filepath):
     
     # insert songplay records
     for index, row in df.iterrows():
-        # get songid and artistid from song and artist tables
-        cur.execute(song_select, (row.song, row.artist, row.length))
+        # get songid and artistid from song and artist tables: lowercase the song and artist before searching
+        cur.execute(song_select, (row.song.lower(), row.artist.lower(), row.length))
         results = cur.fetchone()
         
         if results:
@@ -136,10 +136,8 @@ def process_log_file(cur, filepath):
         else:
             songid, artistid = None, None
 
-        # insert songplay record into a temporary songplay table as the songplay table has foreign
-        # from the empty users and time tables.
-        songplay_data = (row.start_time, row.userId, row.level, songid, artistid, row.sessionId, row.location,
-                         row.userAgent)
+        # insert songplay record into a temporary songplay table as the songplay table has foreign keys from the empty users and time tables.
+        songplay_data = (row.start_time, row.userId, row.level, songid, artistid, row.sessionId, row.location, row.userAgent)
         cur.execute(temp_songplay_table_insert, songplay_data)
 
 def process_data(cur, conn, filepath, func):

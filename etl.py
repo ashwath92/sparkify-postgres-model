@@ -23,7 +23,7 @@ def get_timestamp_components(t):
 
 def process_song_file(cur, filepath):
     """ Reads the current song data file, loads it into a data frame, cleans it and
-    bulk inserts it into the song and artist Postgres tables. Each file contains only
+    inserts it into the song and artist Postgres tables. Each file contains only
     one line. """
     # open song file
     df = pd.read_json(filepath, lines=True)
@@ -98,6 +98,7 @@ def drop_temp_tables(cur):
         cur.execute(query)
         
 def process_log_file(cur, filepath):
+    """ Reads the log file whose location is given in the filepath argument, bulk inserts into the users, time and songplays tables via temporary tables."""
     df = pd.read_json(filepath, lines=True)
     # filter by NextSong action
     df = df[df.page=='NextSong']
@@ -127,19 +128,16 @@ def process_log_file(cur, filepath):
     
     # insert songplay records
     for index, row in df.iterrows():
-        # get songid and artistid from song and artist tables
-        cur.execute(song_select, (row.song, row.artist, row.length))
+        # get songid and artistid from song and artist tables: lowercase the song and artist before searching
+        cur.execute(song_select, (row.song.lower(), row.artist.lower(), row.length))
         results = cur.fetchone()
-        
         if results:
             songid, artistid = results
         else:
             songid, artistid = None, None
 
-        # insert songplay record into a temporary songplay table as the songplay table has foreign
-        # from the empty users and time tables.
-        songplay_data = (row.start_time, row.userId, row.level, songid, artistid, row.sessionId, row.location,
-                         row.userAgent)
+        # insert songplay record into a temporary songplay table as the songplay table has foreign keys from the empty users and time tables.
+        songplay_data = (row.start_time, row.userId, row.level, songid, artistid, row.sessionId, row.location, row.userAgent)
         cur.execute(temp_songplay_table_insert, songplay_data)
 
 def process_data(cur, conn, filepath, func):

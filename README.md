@@ -4,10 +4,11 @@ The purpose of this project is to create a suitable PostgreSQL data model which 
 
 ### Requirements
 
-PostgreSQL
-Python 3.6 + 
-Psycopg2
-Pandas
+* PostgreSQL
+* Python 3.6 + 
+* Psycopg2
+* Pandas
+* Jupyter/Ipython
 
 ### Description of the data sets
 
